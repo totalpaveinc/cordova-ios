@@ -60,7 +60,7 @@
         if (NSClassFromString(@"WKWebView") == nil) {
             return nil;
         }
-        
+
         self.configuration = configuration;
         self.engineWebView = configuration ? [[WKWebView alloc] initWithFrame:frame configuration:configuration] : [[WKWebView alloc] initWithFrame:frame];
     }
@@ -85,7 +85,7 @@
         configuration.processPool = [[CDVWebViewProcessPoolFactory sharedFactory] sharedProcessPool];
 #pragma clang diagnostic pop
     }
-    
+
     if (settings == nil) {
         return configuration;
     }
@@ -308,27 +308,33 @@
 
 - (id)loadRequest:(NSURLRequest*)request
 {
-    if ([self canLoadRequest:request]) { // can load, differentiate between file urls and other schemes
-        if(request.URL.fileURL && self.cdvIsFileScheme) {
-            NSURL* readAccessUrl = [request.URL URLByDeletingLastPathComponent];
-            return [(WKWebView*)_engineWebView loadFileURL:request.URL allowingReadAccessToURL:readAccessUrl];
-        } else if (request.URL.fileURL) {
+    NSURLRequest* noCacheRequest = [
+        NSURLRequest requestWithURL: request.URL
+        cachePolicy: NSURLRequestReloadIgnoringLocalCacheData
+        timeoutInterval: request.timeoutInterval
+    ];
+    
+    if ([self canLoadRequest:noCacheRequest]) { // can load, differentiate between file urls and other schemes
+        if(noCacheRequest.URL.fileURL && self.cdvIsFileScheme) {
+            NSURL* readAccessUrl = [noCacheRequest.URL URLByDeletingLastPathComponent];
+            return [(WKWebView*)_engineWebView loadFileURL:noCacheRequest.URL allowingReadAccessToURL:readAccessUrl];
+        } else if (noCacheRequest.URL.fileURL) {
             NSURL* startURL = [NSURL URLWithString:self.viewController.startPage];
             NSString* startFilePath = [self.commandDelegate pathForResource:[startURL path]];
-            NSURL *url = [[NSURL URLWithString:self.CDV_ASSETS_URL] URLByAppendingPathComponent:request.URL.path];
-            if ([request.URL.path isEqualToString:startFilePath]) {
+            NSURL *url = [[NSURL URLWithString:self.CDV_ASSETS_URL] URLByAppendingPathComponent:noCacheRequest.URL.path];
+            if ([noCacheRequest.URL.path isEqualToString:startFilePath]) {
                 url = [NSURL URLWithString:[NSString stringWithFormat:@"%@/%@", self.CDV_ASSETS_URL, startURL]];
             }
-            if(request.URL.query) {
-                url = [NSURL URLWithString:[@"?" stringByAppendingString:request.URL.query] relativeToURL:url];
+            if(noCacheRequest.URL.query) {
+                url = [NSURL URLWithString:[@"?" stringByAppendingString:noCacheRequest.URL.query] relativeToURL:url];
             }
-            if(request.URL.fragment) {
-                url = [NSURL URLWithString:[@"#" stringByAppendingString:request.URL.fragment] relativeToURL:url];
+            if(noCacheRequest.URL.fragment) {
+                url = [NSURL URLWithString:[@"#" stringByAppendingString:noCacheRequest.URL.fragment] relativeToURL:url];
             }
             // We ignore any existing cached data, since we're already loading it from the filesystem
-            request = [NSURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:request.timeoutInterval];
+            noCacheRequest = [NSURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:request.timeoutInterval];
         }
-        return [(WKWebView*)_engineWebView loadRequest:request];
+        return [(WKWebView*)_engineWebView loadRequest:noCacheRequest];
     } else { // can't load, print out error
         NSString* errorHtml = [NSString stringWithFormat:
                                @"<!doctype html>"
@@ -338,7 +344,7 @@
                                @"   <p>Most likely the cause of the error is that the loading of file urls is not supported in iOS %@.</p>"
                                @"</div>",
                                NSStringFromClass([self class]),
-                               [request.URL description],
+                               [noCacheRequest.URL description],
                                [[UIDevice currentDevice] systemVersion]
                                ];
         return [self loadHTMLString:errorHtml baseURL:nil];
